@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>สร้างไอคอนลิงก์ iPhone (.mobileconfig)</title>
+<style>
+  :root{--bg:#f5f5f7;--card:#fff;--tx:#1d1d1f;--mu:#6e6e73;--ac:#0071e3;--bd:#d2d2d7}
+  @media (prefers-color-scheme:dark){:root{--bg:#000;--card:#1c1c1e;--tx:#f5f5f7;--mu:#98989d;--ac:#2997ff;--bd:#3a3a3c}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);font-family:-apple-system,"Sarabun","Noto Sans Thai",sans-serif;padding:16px}
+  .wrap{max-width:520px;margin:0 auto}
+  h1{font-size:20px;margin:8px 0 16px}
+  .card{background:var(--card);border-radius:14px;padding:16px;margin-bottom:14px}
+  label{display:block;font-size:13px;color:var(--mu);margin:12px 0 4px}
+  label:first-child{margin-top:0}
+  input[type=text],input[type=url]{width:100%;padding:11px;border:1px solid var(--bd);border-radius:10px;font-size:16px;background:transparent;color:var(--tx)}
+  .row{display:flex;gap:12px;align-items:center}
+  #prev{width:72px;height:72px;border-radius:16px;background:var(--bd);object-fit:cover;flex:none}
+  button{width:100%;padding:13px;border:0;border-radius:12px;background:var(--ac);color:#fff;font-size:16px;font-weight:600;margin-top:8px}
+  button.sec{background:transparent;color:var(--ac);border:1px solid var(--ac)}
+  .chk{display:flex;gap:8px;align-items:center;margin-top:12px;font-size:15px}
+  textarea{width:100%;height:160px;font-family:monospace;font-size:11px;border:1px solid var(--bd);border-radius:10px;padding:8px;background:transparent;color:var(--tx)}
+  .note{font-size:13px;color:var(--mu);line-height:1.6}
+  .err{color:#ff3b30;font-size:14px;margin-top:8px;display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>สร้างไอคอนลิงก์สำหรับ iPhone</h1>
+
+  <div class="card">
+    <label>ลิงก์ปลายทาง (URL)</label>
+    <input type="url" id="url" placeholder="https://script.google.com/macros/s/xxxx/exec" inputmode="url">
+
+    <label>ชื่อใต้ไอคอน</label>
+    <input type="text" id="label" placeholder="จองห้องประชุม">
+
+    <label>รูปไอคอน (ไม่ใส่ก็ได้)</label>
+    <div class="row">
+      <img id="prev" alt="">
+      <input type="file" id="file" accept="image/*">
+    </div>
+
+    <div class="chk"><input type="checkbox" id="full" checked><span>เปิดแบบเต็มจอ (ไม่มีแถบ Safari)</span></div>
+    <div class="err" id="err"></div>
+
+    <button id="dl">ดาวน์โหลดไฟล์ .mobileconfig</button>
+    <button class="sec" id="cp">คัดลอกโค้ด XML</button>
+  </div>
+
+  <div class="card">
+    <textarea id="out" readonly placeholder="โค้ดที่สร้างจะแสดงที่นี่"></textarea>
+  </div>
+
+  <div class="card note">
+    <b>วิธีติดตั้งบน iPhone</b><br>
+    1. เปิดหน้านี้ใน <b>Safari</b> บน iPhone แล้วกดดาวน์โหลด → อนุญาต<br>
+    2. ไปที่ <b>การตั้งค่า &gt; ทั่วไป &gt; VPN และการจัดการอุปกรณ์</b> (หรือแบนเนอร์ "ดาวน์โหลดโปรไฟล์แล้ว") แล้วกดติดตั้ง<br>
+    3. ไอคอนจะขึ้นที่หน้าจอโฮม<br><br>
+    หมายเหตุ: ถ้าเปิดไฟล์นี้จากในเครื่องแล้วดาวน์โหลดไม่ติดตั้ง ให้อัปโหลดหน้านี้ขึ้นเว็บ HTTPS (เช่น GitHub Pages) แล้วเปิดจากลิงก์ หรือคัดลอก XML ไปบันทึกเป็นไฟล์ <code>.mobileconfig</code> แล้วอัปโหลดเอง โปรไฟล์ที่ไม่ได้เซ็นจะขึ้นว่า "ไม่ได้ลงนาม" แต่ติดตั้งได้
+  </div>
+</div>
+
+<script>
+let iconB64 = "";
+const $ = id => document.getElementById(id);
+
+const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+const uuid = () => (crypto.randomUUID ? crypto.randomUUID() :
+  "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g,c=>{const r=Math.random()*16|0;return (c=="x"?r:(r&3|8)).toString(16)})).toUpperCase();
+
+$("file").addEventListener("change", e => {
+  const f = e.target.files[0];
+  if(!f) { iconB64=""; $("prev").removeAttribute("src"); return; }
+  const img = new Image();
+  img.onload = () => {
+    const c = document.createElement("canvas");
+    c.width = c.height = 180;
+    const g = c.getContext("2d");
+    // center-crop to square
+    const s = Math.min(img.width, img.height);
+    g.drawImage(img, (img.width-s)/2, (img.height-s)/2, s, s, 0, 0, 180, 180);
+    const url = c.toDataURL("image/png");
+    iconB64 = url.split(",")[1];
+    $("prev").src = url;
+    URL.revokeObjectURL(img.src);
+  };
+  img.src = URL.createObjectURL(f);
+});
+
+function build(){
+  const err = $("err"); err.style.display="none";
+  let url = $("url").value.trim();
+  const label = $("label").value.trim();
+  if(!/^https?:\/\//i.test(url)){ err.textContent="กรุณาใส่ลิงก์ที่ขึ้นต้นด้วย http:// หรือ https://"; err.style.display="block"; return null; }
+  if(!label){ err.textContent="กรุณาใส่ชื่อไอคอน"; err.style.display="block"; return null; }
+  const id = "com.webclip." + uuid().toLowerCase().slice(0,8);
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>PayloadContent</key>
+  <array>
+    <dict>
+      <key>PayloadType</key><string>com.apple.webClip.managed</string>
+      <key>PayloadVersion</key><integer>1</integer>
+      <key>PayloadIdentifier</key><string>${id}.clip</string>
+      <key>PayloadUUID</key><string>${uuid()}</string>
+      <key>PayloadDisplayName</key><string>${esc(label)}</string>
+      <key>Label</key><string>${esc(label)}</string>
+      <key>URL</key><string>${esc(url)}</string>
+      <key>IsRemovable</key><true/>
+      <key>FullScreen</key>${$("full").checked ? "<true/>" : "<false/>"}
+${iconB64 ? `      <key>Icon</key><data>${iconB64}</data>\n` : ""}    </dict>
+  </array>
+  <key>PayloadDisplayName</key><string>${esc(label)}</string>
+  <key>PayloadIdentifier</key><string>${id}</string>
+  <key>PayloadType</key><string>Configuration</string>
+  <key>PayloadUUID</key><string>${uuid()}</string>
+  <key>PayloadVersion</key><integer>1</integer>
+</dict>
+</plist>
+`;
+  $("out").value = xml;
+  return xml;
+}
+
+$("dl").onclick = () => {
+  const xml = build(); if(!xml) return;
+  const blob = new Blob([xml], {type:"application/x-apple-aspen-config"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = ($("label").value.trim().replace(/[^\w\u0E00-\u0E7F-]+/g,"_") || "webclip") + ".mobileconfig";
+  document.body.appendChild(a); a.click(); a.remove();
+};
+
+$("cp").onclick = async () => {
+  const xml = build(); if(!xml) return;
+  try { await navigator.clipboard.writeText(xml); $("cp").textContent="คัดลอกแล้ว ✓"; }
+  catch(e){ $("out").select(); document.execCommand("copy"); $("cp").textContent="คัดลอกแล้ว ✓"; }
+  setTimeout(()=>$("cp").textContent="คัดลอกโค้ด XML",1500);
+};
+</script>
+</body>
+</html>
